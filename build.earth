@@ -1,0 +1,27 @@
+FROM golang:stretch
+
+WORKDIR /app
+
+deps:
+	RUN go get golang.org/x/tools/cmd/goimports
+	RUN go get golang.org/x/lint/golint
+	RUN go get github.com/gordonklaus/ineffassign
+	COPY go.mod go.sum ./
+	RUN go mod download
+	SAVE ARTIFACT go.mod AS LOCAL go.mod
+	SAVE ARTIFACT go.sum AS LOCAL go.sum
+	SAVE IMAGE
+
+code:
+	FROM +deps
+	COPY . .
+	SAVE IMAGE
+
+toyapp:
+	FROM +code
+	ARG GOOS=linux
+	ARG GOARCH=amd64
+	RUN go build \
+			-o build/toyapp \
+			cmd/toyapp/*.go
+	SAVE ARTIFACT build/toyapp AS LOCAL "build/toyapp"
