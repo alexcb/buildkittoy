@@ -6,20 +6,31 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sync"
 
 	"github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // Load "docker-container://" helper.
 	"github.com/moby/buildkit/client/llb"
 )
 
+func prompt(question string) string {
+	fmt.Print("Enter text: ")
+	var input string
+	fmt.Scanln(&input)
+	return input
+}
+
 func main() {
 	fmt.Println("running!")
 
 	goAlpine := llb.Image("docker.io/library/golang:1.13-alpine")
 
+	data := prompt("enter a string: ")
+
 	foo := goAlpine.
 		AddEnv("MYENV", "MYVAL").
-		Run(llb.Shlex("touch /file")).Root()
+		File(llb.Mkfile("/file", 0, []byte(data))).
+		Run(llb.Shlex("apk add --no-cache git"))
 
 	dt, err := foo.Marshal(llb.LinuxAmd64)
 	if err != nil {
@@ -38,7 +49,11 @@ func main() {
 
 	pipeR, pipeW := io.Pipe()
 
+	var wg sync.WaitGroup
+	wg.Add(2)
+
 	go func() {
+		defer wg.Done()
 		cmd := exec.CommandContext(context.TODO(), "docker", "load")
 		cmd.Stdin = pipeR
 		cmd.Stdout = os.Stdout
@@ -52,9 +67,22 @@ func main() {
 
 	ch := make(chan *client.SolveStatus)
 	go func() {
+		defer wg.Done()
 		for {
 			status := <-ch
+			if status == nil {
+				break
+			}
 			fmt.Printf("status is %v\n", status)
+			for _, x := range status.Vertexes {
+				fmt.Printf(" vertex: %v\n", x)
+			}
+			for _, x := range status.Statuses {
+				fmt.Printf(" status: %v\n", x)
+			}
+			for _, x := range status.Logs {
+				fmt.Printf(" log: %v\n", x)
+			}
 		}
 	}()
 
@@ -82,8 +110,6 @@ func main() {
 		panic(err)
 	}
 
-	//eventually it gets pipped to "docker load" (see loadDockerTar)
-	_ = pipeR
-
-	fmt.Printf("here i am\n")
+	wg.Wait()
+	fmt.Printf("finished!\n")
 }
