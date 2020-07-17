@@ -23,16 +23,24 @@ func prompt(question string) string {
 func main() {
 	fmt.Println("running!")
 
-	goAlpine := llb.Image("docker.io/library/golang:1.13-alpine")
+	pyAlpine := llb.Image("docker.io/library/python:3.7-alpine")
 
-	data := prompt("enter a string: ")
+	state := pyAlpine.Run(llb.Args([]string{"python3", "-c", "import socket as s; sock = s.socket(s.AF_UNIX); sock.bind('/root/somesocket')"})).
+		Run(llb.Args([]string{"touch", "/root/foo"})).Root()
 
-	foo := goAlpine.
-		AddEnv("MYENV", "MYVAL").
-		File(llb.Mkfile("/file", 0, []byte(data))).
-		Run(llb.Shlex("apk add --no-cache git"))
+	fa := llb.Copy(state, "/root", "/roo2",
+		&llb.CopyInfo{
+			FollowSymlinks:      true,
+			CopyDirContentsOnly: false, // !isDir
+			AttemptUnpack:       false,
+			CreateDestPath:      true,
+			AllowWildcard:       true,
+			AllowEmptyWildcard:  false,
+		})
 
-	dt, err := foo.Marshal(llb.LinuxAmd64)
+	pyAlpine2 := pyAlpine.File(fa)
+
+	def, err := pyAlpine2.Marshal()
 	if err != nil {
 		panic(err)
 	}
@@ -105,7 +113,7 @@ func main() {
 		//AllowedEntitlements: s.enttlmnts,
 		//LocalDirs:           localDirs,
 	}
-	_, err = bkClient.Solve(context.TODO(), dt, solveOpt, ch)
+	_, err = bkClient.Solve(context.TODO(), def, solveOpt, ch)
 	if err != nil {
 		panic(err)
 	}
